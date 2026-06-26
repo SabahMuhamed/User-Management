@@ -4,7 +4,14 @@ from app.database.database import get_db
 from app.models.user import User
 from app.schemas.update_user import UpdateUser
 from app.models.audit_log import AuditLog
+from app.schemas.change_password import ChangePassword
+from app.utils.security import verify_password, hash_password
+from app.utils.token import decode_access_token
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from jose import JWTError
 
+
+security = HTTPBearer()
 
 router = APIRouter(
     prefix="/api/users",
@@ -24,8 +31,9 @@ def get_users(
 
     if search:
         query = query.filter(
-            (User.full_name.contains(search)) |
-            (User.email.contains(search))
+            User.full_name.contains(search) |
+            User.email.contains(search) |
+            User.mobile_number.contains(search)
         )
 
     total = query.count()
@@ -42,6 +50,62 @@ def get_users(
         "pageSize": pageSize,
         "total": total,
         "data": users
+    }
+
+
+@router.put("/change-password")
+def change_password(
+    data: ChangePassword,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+):
+    token = credentials.credentials
+
+    try:
+        payload = decode_access_token(token)
+    except JWTError:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid Token"
+        )
+
+    user = db.query(User).filter(
+        User.id == payload["user_id"]
+    ).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="User not found"
+        )
+
+    if not verify_password(
+        data.old_password,
+        user.password
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Old password is incorrect"
+        )
+
+    if data.old_password == data.new_password:
+        raise HTTPException(
+            status_code=400,
+            detail="New password must be different from old password"
+        )
+
+    user.password = hash_password(data.new_password)
+
+    audit = AuditLog(
+        user_id=user.id,
+        action="PASSWORD_CHANGED"
+    )
+
+    db.add(audit)
+    db.commit()
+
+    return {
+        "message": "Password changed successfully"
     }
 
 
