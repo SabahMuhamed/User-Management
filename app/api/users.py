@@ -123,7 +123,15 @@ def get_user(
             detail="User not found"
         )
 
-    return user
+    return {
+        "id": user.id,
+        "full_name": user.full_name,
+        "email": user.email,
+        "mobile_number": user.mobile_number,
+        "profile_image": user.profile_image,
+        "is_active": user.is_active,
+        "last_login": user.last_login
+    }
 
 
 @router.put("/{user_id}")
